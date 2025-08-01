@@ -82,7 +82,7 @@
   </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container" id="profile-container" style="display: none;">
     <img id="profile-pic" class="profile-pic" src="" alt="Profile Picture" />
     <div class="username-section" id="username"></div>
     <div id="display-name"></div>
@@ -93,8 +93,8 @@
     <div class="bio" id="bio"></div>
     <div class="joined" id="joined-date"></div>
     <button id="follow-btn" class="follow-btn" style="display:none;"></button>
-    <div class="error" id="error-message"></div>
   </div>
+  <div class="error" id="error-message"></div>
 
   <script type="module">
     import { auth, db } from './config.js';
@@ -105,112 +105,120 @@
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
     const params = new URLSearchParams(window.location.search);
-    const usernameParam = params.get("username");
+    const usernameParam = params.get("user"); // ✅ FIXED PARAM
     const followBtn = document.getElementById("follow-btn");
+    const errorDiv = document.getElementById("error-message");
+    const profileContainer = document.getElementById("profile-container");
 
     if (!usernameParam) {
-      document.getElementById("error-message").textContent = "No username provided.";
-      throw new Error("Missing username");
-    }
+      errorDiv.textContent = "Username not provided in URL.";
+    } else {
+      onAuthStateChanged(auth, async (user) => {
+        if (!user) return window.location.href = "login.html";
 
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) return window.location.href = "login.html";
+        try {
+          const q = query(collection(db, "users"), where("username", "==", usernameParam));
+          const querySnapshot = await getDocs(q);
 
-      const q = query(collection(db, "users"), where("username", "==", usernameParam));
-      const querySnapshot = await getDocs(q);
-
-      if (querySnapshot.empty) {
-        document.getElementById("error-message").textContent = "User not found.";
-        return;
-      }
-
-      const targetDoc = querySnapshot.docs[0];
-      const targetData = targetDoc.data();
-      const targetId = targetDoc.id;
-
-      if (user.uid === targetId) return window.location.href = "myprofile.html";
-
-      const currentUserRef = doc(db, "users", user.uid);
-      const currentUserSnap = await getDoc(currentUserRef);
-      const currentUserData = currentUserSnap.data();
-
-      const isPrivate = targetData.isPrivate;
-      const isFollowing = targetData.followers?.includes(user.uid);
-
-      const notifRef = doc(db, "notifications", targetId);
-      const notifSnap = await getDoc(notifRef);
-      const requests = notifSnap.exists() ? notifSnap.data().requests || [] : [];
-      const alreadyRequested = requests.includes(user.uid);
-
-      const handleFollow = async () => {
-        if (isPrivate) {
-          if (!alreadyRequested) {
-            await setDoc(notifRef, {
-              requests: arrayUnion(user.uid),
-              list: arrayUnion({
-                fromUid: user.uid,
-                username: currentUserData.username,
-                displayName: currentUserData.displayName || "",
-                type: "follow-request",
-                timestamp: new Date().toISOString()
-              })
-            }, { merge: true });
+          if (querySnapshot.empty) {
+            errorDiv.textContent = "User not found.";
+            return;
           }
-          followBtn.disabled = true;
-          followBtn.textContent = "Request Sent";
-        } else {
-          await updateDoc(doc(db, "users", targetId), {
-            followers: arrayUnion(user.uid)
-          });
-          await updateDoc(currentUserRef, {
-            following: arrayUnion(targetId)
-          });
-          followBtn.textContent = "Unfollow";
-          followBtn.onclick = handleUnfollow;
+
+          profileContainer.style.display = "block";
+          const targetDoc = querySnapshot.docs[0];
+          const targetData = targetDoc.data();
+          const targetId = targetDoc.id;
+
+          if (user.uid === targetId) return window.location.href = "myprofile.html";
+
+          const currentUserRef = doc(db, "users", user.uid);
+          const currentUserSnap = await getDoc(currentUserRef);
+          const currentUserData = currentUserSnap.data();
+
+          const isPrivate = targetData.isPrivate;
+          const isFollowing = targetData.followers?.includes(user.uid);
+
+          const notifRef = doc(db, "notifications", targetId);
+          const notifSnap = await getDoc(notifRef);
+          const requests = notifSnap.exists() ? notifSnap.data().requests || [] : [];
+          const alreadyRequested = requests.includes(user.uid);
+
+          const handleFollow = async () => {
+            if (isPrivate) {
+              if (!alreadyRequested) {
+                await setDoc(notifRef, {
+                  requests: arrayUnion(user.uid),
+                  list: arrayUnion({
+                    fromUid: user.uid,
+                    username: currentUserData.username,
+                    displayName: currentUserData.displayName || "",
+                    type: "follow-request",
+                    timestamp: new Date().toISOString()
+                  })
+                }, { merge: true });
+              }
+              followBtn.disabled = true;
+              followBtn.textContent = "Request Sent";
+            } else {
+              await updateDoc(doc(db, "users", targetId), {
+                followers: arrayUnion(user.uid)
+              });
+              await updateDoc(currentUserRef, {
+                following: arrayUnion(targetId)
+              });
+              followBtn.textContent = "Unfollow";
+              followBtn.onclick = handleUnfollow;
+            }
+          };
+
+          const handleUnfollow = async () => {
+            await updateDoc(doc(db, "users", targetId), {
+              followers: arrayRemove(user.uid)
+            });
+            await updateDoc(currentUserRef, {
+              following: arrayRemove(targetId)
+            });
+            followBtn.textContent = isPrivate ? "Send Follow Request" : "Follow";
+            followBtn.disabled = false;
+            followBtn.onclick = handleFollow;
+          };
+
+          followBtn.style.display = "inline-block";
+          if (isFollowing) {
+            followBtn.textContent = "Unfollow";
+            followBtn.onclick = handleUnfollow;
+          } else if (alreadyRequested) {
+            followBtn.textContent = "Request Sent";
+            followBtn.disabled = true;
+          } else {
+            followBtn.textContent = isPrivate ? "Send Follow Request" : "Follow";
+            followBtn.disabled = false;
+            followBtn.onclick = handleFollow;
+          }
+
+          document.getElementById("profile-pic").src = targetData.photoURL || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png";
+          document.getElementById("username").innerHTML =
+            `@${targetData.username}` +
+            (targetData.isVerified
+              ? ' <img src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" class="verified-badge" alt="Verified">'
+              : '');
+          document.getElementById("display-name").textContent = targetData.displayName || "";
+          document.getElementById("bio").textContent = targetData.bio || "";
+          document.getElementById("followers").textContent = targetData.followers?.length || 0;
+          document.getElementById("following").textContent = targetData.following?.length || 0;
+
+          if (targetData.createdAt?.seconds) {
+            const joinedDate = new Date(targetData.createdAt.seconds * 1000);
+            document.getElementById("joined-date").textContent = `Joined: ${joinedDate.toDateString()}`;
+          }
+
+        } catch (err) {
+          console.error("Error loading profile:", err);
+          errorDiv.textContent = "Something went wrong while loading the profile.";
         }
-      };
-
-      const handleUnfollow = async () => {
-        await updateDoc(doc(db, "users", targetId), {
-          followers: arrayRemove(user.uid)
-        });
-        await updateDoc(currentUserRef, {
-          following: arrayRemove(targetId)
-        });
-        followBtn.textContent = isPrivate ? "Send Follow Request" : "Follow";
-        followBtn.disabled = false;
-        followBtn.onclick = handleFollow;
-      };
-
-      followBtn.style.display = "inline-block";
-      if (isFollowing) {
-        followBtn.textContent = "Unfollow";
-        followBtn.onclick = handleUnfollow;
-      } else if (alreadyRequested) {
-        followBtn.textContent = "Request Sent";
-        followBtn.disabled = true;
-      } else {
-        followBtn.textContent = isPrivate ? "Send Follow Request" : "Follow";
-        followBtn.disabled = false;
-        followBtn.onclick = handleFollow;
-      }
-
-      document.getElementById("profile-pic").src = targetData.photoURL || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png";
-      document.getElementById("username").innerHTML =
-        `@${targetData.username}` +
-        (targetData.isVerified
-          ? ' <img src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" class="verified-badge" alt="Verified">'
-          : '');
-      document.getElementById("display-name").textContent = targetData.displayName || "";
-      document.getElementById("bio").textContent = targetData.bio || "";
-      document.getElementById("followers").textContent = targetData.followers?.length || 0;
-      document.getElementById("following").textContent = targetData.following?.length || 0;
-
-      if (targetData.createdAt?.seconds) {
-        const joinedDate = new Date(targetData.createdAt.seconds * 1000);
-        document.getElementById("joined-date").textContent = `Joined: ${joinedDate.toDateString()}`;
-      }
-    });
+      });
+    }
   </script>
 </body>
 </html>

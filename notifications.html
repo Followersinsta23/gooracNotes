@@ -6,133 +6,135 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <style>
     body {
-      background-color: #000;
-      color: #fff;
       font-family: Arial, sans-serif;
+      background-color: #f9f9f9;
       margin: 0;
-      padding: 0;
-    }
-    .container {
       padding: 20px;
     }
     .card {
-      background-color: #1a1a1a;
-      border-radius: 12px;
+      background: white;
+      border-radius: 10px;
       padding: 15px;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      gap: 15px;
+      box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+      margin-bottom: 15px;
     }
-    .profile-img {
-      width: 48px;
-      height: 48px;
-      border-radius: 50%;
-      object-fit: cover;
+    .username {
+      font-weight: bold;
     }
-    .notification-content {
-      flex: 1;
+    .verified {
+      color: #007bff;
+      font-size: 0.9em;
+      margin-left: 5px;
     }
-    .message {
-      font-size: 14px;
+    .button {
+      background-color: #28a745;
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 5px;
+      cursor: pointer;
+      margin-top: 10px;
     }
-    .timestamp {
-      font-size: 12px;
-      color: #999;
-      margin-top: 4px;
+    .button:hover {
+      background-color: #218838;
     }
   </style>
 </head>
 <body>
-  <div class="container" id="notificationsContainer">
-    <h2>Notifications</h2>
-    <div id="notificationList"></div>
-  </div>
+  <h2>Notifications</h2>
+  <div id="notifications-container">Loading notifications...</div>
 
-  <script type="module">
-    import { auth, db } from './config.js';
-    import {
-      onAuthStateChanged
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-    import {
-      collection,
-      doc,
-      getDoc,
-      getDocs,
-      query,
-      where,
-      orderBy
-    } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.3.1/firebase-firestore-compat.js"></script>
 
-    const container = document.getElementById('notificationList');
+  <script>
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT_ID.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
 
-    function renderNotificationCard({ fromUser, type, timestamp }) {
-      const div = document.createElement('div');
-      div.className = 'card';
+    const notificationsContainer = document.getElementById('notifications-container');
 
-      const image = document.createElement('img');
-      image.src = fromUser.profilePicture || 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
-      image.className = 'profile-img';
-
-      const content = document.createElement('div');
-      content.className = 'notification-content';
-
-      const msg = document.createElement('div');
-      msg.className = 'message';
-
-      let messageText = '';
-      if (type === 'follow_request') {
-        messageText = `${fromUser.username} sent you a follow request`;
-      } else if (type === 'follow_accepted') {
-        messageText = `${fromUser.username} accepted your follow request`;
-      } else if (type === 'like') {
-        messageText = `${fromUser.username} liked your post`;
-      }
-
-      msg.textContent = messageText;
-
-      const time = document.createElement('div');
-      time.className = 'timestamp';
-      time.textContent = new Date(timestamp).toLocaleString();
-
-      content.appendChild(msg);
-      content.appendChild(time);
-
-      div.appendChild(image);
-      div.appendChild(content);
-
-      container.appendChild(div);
-    }
-
-    onAuthStateChanged(auth, async user => {
+    auth.onAuthStateChanged(async user => {
       if (!user) {
-        window.location.href = 'login.html';
+        window.location.href = "login.html";
         return;
       }
 
-      const notificationsRef = collection(db, "users", user.uid, "notifications");
-      const q = query(notificationsRef, orderBy("timestamp", "desc"));
+      const uid = user.uid;
 
-      const querySnapshot = await getDocs(q);
+      try {
+        const docRef = db.collection("notifications").doc(uid);
+        const docSnap = await docRef.get();
 
-      if (querySnapshot.empty) {
-        container.innerHTML = '<p>No notifications found.</p>';
-        return;
-      }
+        if (!docSnap.exists || !docSnap.data().list || docSnap.data().list.length === 0) {
+          notificationsContainer.innerHTML = "<p>No notifications found.</p>";
+          return;
+        }
 
-      for (const docSnap of querySnapshot.docs) {
-        const data = docSnap.data();
-        const fromUserId = data.from;
-        const fromDoc = await getDoc(doc(db, "users", fromUserId));
-        const fromUser = fromDoc.exists() ? fromDoc.data() : { username: "Unknown", profilePicture: "" };
+        const notifications = docSnap.data().list;
+        notificationsContainer.innerHTML = '';
 
-        renderNotificationCard({
-          fromUser,
-          type: data.type,
-          timestamp: data.timestamp?.toDate?.() || new Date()
-        });
+        for (const n of notifications) {
+          const userDoc = await db.collection("users").doc(n.fromUid).get();
+          const username = userDoc.data()?.username || "Unknown User";
+          const verified = userDoc.data()?.verified;
+
+          const card = document.createElement('div');
+          card.className = 'card';
+
+          const userLink = document.createElement('a');
+          userLink.href = `profile.html?user=${username}`;
+          userLink.className = 'username';
+          userLink.innerText = username;
+
+          const verifiedSpan = verified ? `<span class="verified">✔️ Verified</span>` : '';
+
+          const acceptBtn = document.createElement('button');
+          acceptBtn.className = 'button';
+          acceptBtn.textContent = "Accept Follow Request";
+          acceptBtn.onclick = async () => {
+            try {
+              await db.collection("notifications").doc(uid).update({
+                list: firebase.firestore.FieldValue.arrayRemove(n)
+              });
+
+              await db.collection("notifications").doc(n.fromUid).update({
+                list: firebase.firestore.FieldValue.arrayUnion({
+                  fromUid: uid,
+                  type: "follow-accepted"
+                })
+              });
+
+              card.remove();
+            } catch (err) {
+              alert("Error accepting follow request.");
+              console.error(err);
+            }
+          };
+
+          card.appendChild(userLink);
+          if (verified) card.innerHTML += verifiedSpan;
+          card.appendChild(document.createElement('br'));
+          card.appendChild(acceptBtn);
+          notificationsContainer.appendChild(card);
+        }
+
+      } catch (error) {
+        console.error("Error fetching notifications:", error);
+        notificationsContainer.innerHTML = "<p>Error loading notifications.</p>";
       }
     });
   </script>
 </body>
 </html>
+    

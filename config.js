@@ -30,3 +30,4 @@ async function isUsernameTaken(username) {
 
 // 🌐 Export all required
 export { app, auth, db, storage, isUsernameTaken };
+    
