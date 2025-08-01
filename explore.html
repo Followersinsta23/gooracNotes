@@ -12,6 +12,8 @@
       --text: #fff;
       --subtext: #aaa;
       --border: #2a2a2a;
+      --btn-bg: #333;
+      --btn-text: #eee;
     }
     * {
       margin: 0;
@@ -43,21 +45,22 @@
       color: var(--subtext);
     }
     #results {
-      padding: 10px 12px 100px;
+      padding: 12px 12px 100px;
     }
     .user-card {
       display: flex;
+      justify-content: space-between;
       align-items: center;
-      padding: 10px 12px;
+      padding: 10px 14px;
       margin-bottom: 12px;
       background-color: var(--card-bg);
       border-radius: 12px;
       border: 1px solid var(--border);
-      cursor: pointer;
-      transition: background 0.2s ease;
     }
-    .user-card:hover {
-      background-color: #1e1e1e;
+    .card-left {
+      display: flex;
+      align-items: center;
+      cursor: pointer;
     }
     .user-card img.profile {
       width: 52px;
@@ -92,6 +95,15 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .follow-btn {
+      padding: 6px 12px;
+      background-color: var(--btn-bg);
+      color: var(--btn-text);
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -101,42 +113,78 @@
   <div id="results"></div>
 
   <script type="module">
-    import { db } from './config.js';
+    import { db, auth } from './config.js';
     import {
       collection,
-      getDocs
+      getDocs,
+      doc,
+      getDoc
     } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+    import {
+      getAuth,
+      onAuthStateChanged
+    } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
     const searchInput = document.getElementById("searchInput");
     const resultsDiv = document.getElementById("results");
 
+    let currentUserUID = null;
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = "login.html";
+      } else {
+        currentUserUID = user.uid;
+        searchInput.addEventListener("input", () => {
+          searchUsers(searchInput.value);
+        });
+      }
+    });
+
+    async function getFollowStatus(targetUID) {
+      if (!currentUserUID || currentUserUID === targetUID) return null;
+      const followDoc = await getDoc(doc(db, "users", currentUserUID, "following", targetUID));
+      if (followDoc.exists()) {
+        return followDoc.data().status || "Following";
+      }
+      return "Follow";
+    }
+
     async function searchUsers(keyword) {
       resultsDiv.innerHTML = "";
-
       const search = keyword.trim().toLowerCase();
-      if (search === "") return; // Don’t show results if search is empty
+      if (search === "") return;
 
-      const usersRef = collection(db, "users");
-      const snapshot = await getDocs(usersRef);
+      const snapshot = await getDocs(collection(db, "users"));
+      const seen = new Set();
 
-      snapshot.forEach(doc => {
-        const user = doc.data();
+      for (const docSnap of snapshot.docs) {
+        const user = docSnap.data();
+        const uid = docSnap.id;
+
         const matchUsername = user.username?.toLowerCase().includes(search);
         const matchDisplay = user.displayName?.toLowerCase().includes(search);
 
-        if (!(matchUsername || matchDisplay)) return;
+        if (!(matchUsername || matchDisplay)) continue;
+        if (seen.has(uid)) continue;
+        seen.add(uid);
 
         const card = document.createElement("div");
         card.className = "user-card";
-        card.onclick = () => {
-          window.location.href = `profile.html?user=${user.username}`;
-        };
 
         const verifiedBadge = user.isVerified
           ? `<img class="verified-badge" src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" alt="Verified">`
           : "";
 
-        card.innerHTML = `
+        const followStatus = await getFollowStatus(uid);
+
+        const cardLeft = document.createElement("div");
+        cardLeft.className = "card-left";
+        cardLeft.onclick = () => {
+          window.location.href = `profile.html?user=${user.username}`;
+        };
+
+        cardLeft.innerHTML = `
           <img class="profile" src="${user.photoURL || 'https://via.placeholder.com/52'}" alt="Profile">
           <div class="user-info">
             <div class="username">
@@ -145,13 +193,19 @@
             <div class="display-name">${user.displayName || ''}</div>
           </div>
         `;
-        resultsDiv.appendChild(card);
-      });
-    }
 
-    searchInput.addEventListener("input", () => {
-      searchUsers(searchInput.value);
-    });
+        card.appendChild(cardLeft);
+
+        if (followStatus) {
+          const btn = document.createElement("button");
+          btn.className = "follow-btn";
+          btn.textContent = followStatus;
+          card.appendChild(btn);
+        }
+
+        resultsDiv.appendChild(card);
+      }
+    }
   </script>
 </body>
 </html>
