@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>User Profile</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script type="module" src="./config.js"></script>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #000;
+      color: #fff;
+    }
+    .container {
+      max-width: 400px;
+      margin: 0 auto;
+      padding: 20px;
+      text-align: center;
+    }
+    .profile-pic {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid #333;
+    }
+    .username-section {
+      margin-top: 12px;
+      font-size: 1.2rem;
+      font-weight: bold;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+    }
+    .verified-badge {
+      width: 14px;
+      height: 14px;
+      vertical-align: middle;
+    }
+    #display-name {
+      color: #ccc;
+      margin-top: 4px;
+      font-size: 1rem;
+    }
+    .counts {
+      display: flex;
+      justify-content: space-around;
+      margin-top: 16px;
+      font-size: 0.9rem;
+    }
+    .counts div {
+      text-align: center;
+    }
+    .bio {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+    .joined {
+      font-size: 0.8rem;
+      margin-top: 8px;
+      color: #666;
+    }
+    .follow-btn {
+      margin-top: 16px;
+      padding: 8px 20px;
+      background-color: #333;
+      border: none;
+      color: white;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .follow-btn:hover {
+      background-color: #555;
+    }
+    .error {
+      text-align: center;
+      color: red;
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <img id="profile-pic" class="profile-pic" src="" alt="Profile Picture" />
+    <div class="username-section" id="username"></div>
+    <div id="display-name"></div>
+    <div class="counts">
+      <div><strong id="followers">0</strong><br>Followers</div>
+      <div><strong id="following">0</strong><br>Following</div>
+    </div>
+    <div class="bio" id="bio"></div>
+    <div class="joined" id="joined-date"></div>
+    <button id="follow-btn" class="follow-btn" style="display:none;"></button>
+    <div class="error" id="error-message"></div>
+  </div>
+
+  <script type="module">
+    import { auth, db } from './config.js';
+    import {
+      collection, doc, getDoc, getDocs, query, where,
+      updateDoc, arrayUnion, arrayRemove, setDoc
+    } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+
+    const params = new URLSearchParams(window.location.search);
+    const usernameParam = params.get("username");
+
+    if (!usernameParam) {
+      document.getElementById("error-message").textContent = "No username provided.";
+      throw new Error("Missing username");
+    }
+
+    onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        window.location.href = "login.html";
+        return;
+      }
+
+      const q = query(collection(db, "users"), where("username", "==", usernameParam));
+      const querySnapshot = await getDocs(q);
+
+      if (querySnapshot.empty) {
+        document.getElementById("error-message").textContent = "User not found.";
+        return;
+      }
+
+      const targetDoc = querySnapshot.docs[0];
+      const targetData = targetDoc.data();
+      const targetId = targetDoc.id;
+
+      if (user.uid === targetId) {
+        document.getElementById("follow-btn").style.display = "none";
+      }
+
+      const currentUserRef = doc(db, "users", user.uid);
+      const currentUserSnap = await getDoc(currentUserRef);
+      const currentUserData = currentUserSnap.data();
+
+      const isFollowing = targetData.followers?.includes(user.uid);
+      const isPrivate = targetData.isPrivate === true;
+      const button = document.getElementById("follow-btn");
+
+      // Show follow/request/unfollow based on state
+      if (user.uid !== targetId) {
+        button.style.display = "inline-block";
+
+        if (isPrivate && !isFollowing) {
+          button.textContent = "Send Follow Request";
+          button.onclick = async () => {
+            const notifRef = doc(db, "notifications", targetId);
+            const notifSnap = await getDoc(notifRef);
+            if (!notifSnap.exists()) {
+              await setDoc(notifRef, { requests: [user.uid] });
+            } else {
+              await updateDoc(notifRef, {
+                requests: arrayUnion(user.uid)
+              });
+            }
+            button.disabled = true;
+            button.textContent = "Request Sent";
+          };
+        } else {
+          button.textContent = isFollowing ? "Unfollow" : "Follow";
+          button.onclick = async () => {
+            const targetUserRef = doc(db, "users", targetId);
+            if (isFollowing) {
+              await updateDoc(currentUserRef, {
+                following: arrayRemove(targetId)
+              });
+              await updateDoc(targetUserRef, {
+                followers: arrayRemove(user.uid)
+              });
+              button.textContent = "Follow";
+            } else {
+              await updateDoc(currentUserRef, {
+                following: arrayUnion(targetId)
+              });
+              await updateDoc(targetUserRef, {
+                followers: arrayUnion(user.uid)
+              });
+              button.textContent = "Unfollow";
+            }
+          };
+        }
+      }
+
+      document.getElementById("profile-pic").src = targetData.photoURL || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png";
+      document.getElementById("username").innerHTML =
+        `@${targetData.username}` +
+        (targetData.isVerified
+          ? ' <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Twitter_Verified_Badge.svg/32px-Twitter_Verified_Badge.svg.png" class="verified-badge" alt="Verified">'
+          : '');
+      document.getElementById("display-name").textContent = targetData.displayName || "";
+      document.getElementById("bio").textContent = targetData.bio || "";
+      document.getElementById("followers").textContent = (targetData.followers?.length || 0);
+      document.getElementById("following").textContent = (targetData.following?.length || 0);
+
+      if (targetData.createdAt?.seconds) {
+        const joinedDate = new Date(targetData.createdAt.seconds * 1000);
+        document.getElementById("joined-date").textContent = `Joined: ${joinedDate.toDateString()}`;
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,258 @@
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Setup Profile</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        * {
+          box-sizing: border-box;
+        }
+    
+        body {
+          margin: 0;
+          font-family: 'Segoe UI', sans-serif;
+          background-color: #000;
+          color: #fff;
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          min-height: 100vh;
+        }
+    
+        .container {
+          background: #121212;
+          padding: 2rem;
+          border-radius: 1rem;
+          width: 90%;
+          max-width: 400px;
+          box-shadow: 0 0 15px rgba(255, 255, 255, 0.05);
+        }
+    
+        .container img {
+          width: 100px;
+          height: 100px;
+          border-radius: 50%;
+          object-fit: cover;
+          margin: 0 auto 1rem;
+          display: block;
+          border: 2px solid #fff;
+        }
+    
+        h2 {
+          text-align: center;
+          margin-bottom: 1.5rem;
+        }
+    
+        label {
+          display: block;
+          margin: 0.5rem 0 0.2rem;
+          font-size: 0.9rem;
+        }
+    
+        input, textarea {
+          width: 100%;
+          padding: 0.75rem;
+          border-radius: 0.5rem;
+          border: none;
+          background-color: #222;
+          color: #fff;
+          margin-bottom: 1rem;
+        }
+    
+        .username-check {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+    
+        .username-check span {
+          font-size: 1.2rem;
+        }
+    
+        .toggle-container {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          margin-top: 1rem;
+        }
+    
+        .toggle-switch {
+          position: relative;
+          width: 50px;
+          height: 26px;
+        }
+    
+        .toggle-switch input {
+          opacity: 0;
+          width: 0;
+          height: 0;
+        }
+    
+        .slider {
+          position: absolute;
+          cursor: pointer;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background-color: #888;
+          transition: 0.4s;
+          border-radius: 26px;
+        }
+    
+        .slider:before {
+          position: absolute;
+          content: "";
+          height: 20px;
+          width: 20px;
+          left: 3px;
+          bottom: 3px;
+          background-color: white;
+          transition: 0.4s;
+          border-radius: 50%;
+        }
+    
+        input:checked + .slider {
+          background-color: #3897f0;
+        }
+    
+        input:checked + .slider:before {
+          transform: translateX(24px);
+        }
+    
+        button {
+          width: 100%;
+          padding: 0.8rem;
+          background-color: #3897f0;
+          color: #fff;
+          border: none;
+          border-radius: 0.5rem;
+          font-weight: bold;
+          margin-top: 1.5rem;
+          cursor: pointer;
+        }
+    
+        button:hover {
+          background-color: #2f80ed;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <img id="profile-pic" src="default.jpg" alt="Profile Picture" />
+        <h2 id="heading">Setup Your Profile</h2>
+    
+        <form id="setup-form">
+          <label for="displayName">Display Name</label>
+          <input type="text" id="displayName" placeholder="Your full name" required>
+    
+          <label for="username">Username</label>
+          <div class="username-check">
+            <input type="text" id="username" placeholder="Unique username" required>
+            <span id="username-status"></span>
+          </div>
+    
+          <label for="bio">Bio</label>
+          <textarea id="bio" placeholder="Tell something about yourself" rows="3"></textarea>
+    
+          <div class="toggle-container">
+            <label for="privacy">Private Account</label>
+            <label class="toggle-switch">
+              <input type="checkbox" id="privacy">
+              <span class="slider"></span>
+            </label>
+          </div>
+    
+          <button type="submit">Complete Setup</button>
+        </form>
+      </div>
+    
+      <script type="module">
+        import { auth, db } from './config.js';
+        import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+        import { doc, setDoc, getDocs, collection, query, where } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+    
+        const profilePic = document.getElementById("profile-pic");
+        const displayNameInput = document.getElementById("displayName");
+        const usernameInput = document.getElementById("username");
+        const usernameStatus = document.getElementById("username-status");
+        const bioInput = document.getElementById("bio");
+        const privacyToggle = document.getElementById("privacy");
+        const form = document.getElementById("setup-form");
+    
+        let currentUser = null;
+    
+        onAuthStateChanged(auth, user => {
+          if (user) {
+            currentUser = user;
+            profilePic.src = user.photoURL || "default.jpg";
+            displayNameInput.value = user.displayName || "";
+          } else {
+            window.location.href = "login.html";
+          }
+        });
+    
+        usernameInput.addEventListener("input", async () => {
+          const username = usernameInput.value.trim().toLowerCase();
+          if (username.length < 3) {
+            usernameStatus.textContent = "";
+            return;
+          }
+    
+          const q = query(collection(db, "users"), where("username", "==", username));
+          const snapshot = await getDocs(q);
+    
+          if (snapshot.empty) {
+            usernameStatus.textContent = "✔️";
+            usernameStatus.style.color = "lightgreen";
+          } else {
+            usernameStatus.textContent = "❌";
+            usernameStatus.style.color = "red";
+          }
+        });
+    
+        form.addEventListener("submit", async (e) => {
+          e.preventDefault();
+    
+          const displayName = displayNameInput.value.trim();
+          const username = usernameInput.value.trim().toLowerCase();
+          const bio = bioInput.value.trim();
+          const isPrivate = privacyToggle.checked;
+    
+          if (!displayName || !username) {
+            alert("Display name and username are required.");
+            return;
+          }
+    
+          const q = query(collection(db, "users"), where("username", "==", username));
+          const snapshot = await getDocs(q);
+          if (!snapshot.empty) {
+            alert("Username is already taken.");
+            return;
+          }
+    
+          const userData = {
+            uid: currentUser.uid,
+            displayName,
+            photoURL: currentUser.photoURL || "",
+            username,
+            bio,
+            isPrivate,
+            isVerified: false,
+            createdAt: new Date().toISOString(),
+            followers: [],
+            following: []
+          };
+    
+          try {
+            await setDoc(doc(db, "users", currentUser.uid), userData);
+            window.location.href = `profile.html?username=${username}`;
+          } catch (err) {
+            console.error("Error saving profile:", err);
+            alert("Error saving profile. Try again.");
+          }
+        });
+      </script>
+    </body>
+    </html>

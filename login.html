@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login | Goorac</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet" />
+
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+      height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: white;
+    }
+
+    .login-box {
+      background: rgba(0, 0, 0, 0.85);
+      padding: 40px 30px;
+      border-radius: 12px;
+      width: 90%;
+      max-width: 360px;
+      text-align: center;
+    }
+
+    .login-box h1 {
+      margin-bottom: 25px;
+      font-size: 26px;
+    }
+
+    .google-btn {
+      background-color: white;
+      color: #444;
+      font-weight: bold;
+      padding: 12px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      transition: background 0.3s ease;
+    }
+
+    .google-btn img {
+      width: 20px;
+      height: 20px;
+      margin-right: 10px;
+    }
+
+    .google-btn:hover {
+      background-color: #ddd;
+    }
+
+    .status {
+      margin-top: 15px;
+      font-size: 14px;
+      color: #f9c;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <h1>Welcome to Goorac</h1>
+    <button class="google-btn" id="googleSignInBtn">
+      <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" />
+      Sign in with Google
+    </button>
+    <p class="status" id="status"></p>
+  </div>
+
+  <script type="module">
+    import { auth, db } from './config.js';
+    import {
+      GoogleAuthProvider,
+      signInWithPopup
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+    import {
+      doc,
+      getDoc
+    } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const signInBtn = document.getElementById("googleSignInBtn");
+    const status = document.getElementById("status");
+
+    signInBtn.addEventListener("click", async () => {
+      const provider = new GoogleAuthProvider();
+
+      try {
+        status.textContent = "Signing in...";
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
+
+        const userRef = doc(db, "users", user.uid);
+        const docSnap = await getDoc(userRef);
+
+        if (docSnap.exists()) {
+          // User exists → go to home
+          window.location.href = "home.html";
+        } else {
+          // New user → go to setup
+          window.location.href = "setup.html";
+        }
+      } catch (error) {
+        console.error("Sign-in failed:", error);
+        status.textContent = "Sign-in failed. Please try again.";
+      }
+    });
+  </script>
+</body>
+</html>
