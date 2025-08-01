@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Explore</title>
   <style>
     :root {
@@ -12,7 +12,6 @@
       --text: #fff;
       --subtext: #aaa;
       --border: #2a2a2a;
-      --accent: #1da1f2;
     }
     * {
       margin: 0;
@@ -50,24 +49,27 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 12px;
-      margin-bottom: 10px;
+      padding: 10px 12px;
+      margin-bottom: 12px;
       background-color: var(--card-bg);
-      border: 1px solid var(--border);
       border-radius: 12px;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.2s ease;
     }
-    .user-info-wrapper {
+    .user-card:hover {
+      background-color: #1e1e1e;
+    }
+    .left {
       display: flex;
       align-items: center;
-      gap: 12px;
-      overflow: hidden;
-      cursor: pointer;
     }
-    .user-card img.profile {
-      width: 48px;
-      height: 48px;
+    .profile {
+      width: 52px;
+      height: 52px;
       border-radius: 50%;
       object-fit: cover;
+      margin-right: 14px;
     }
     .user-info {
       display: flex;
@@ -95,23 +97,15 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .action-button {
-      padding: 6px 16px;
+    .status {
       font-size: 14px;
-      border: none;
-      border-radius: 20px;
-      cursor: pointer;
-      transition: 0.2s;
-      white-space: nowrap;
-    }
-    .follow-btn {
-      background-color: var(--accent);
+      background-color: #333;
+      padding: 6px 12px;
+      border-radius: 999px;
       color: white;
-    }
-    .unfollow-btn, .request-sent-btn {
-      background-color: transparent;
-      color: var(--text);
-      border: 1px solid var(--border);
+      white-space: nowrap;
+      text-align: center;
+      min-width: 90px;
     }
   </style>
 </head>
@@ -125,131 +119,93 @@
     import { db, auth } from './config.js';
     import {
       collection,
-      getDocs,
       doc,
-      getDoc,
-      updateDoc,
-      arrayUnion,
-      arrayRemove
+      getDocs,
+      getDoc
     } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+    import {
+      onAuthStateChanged
+    } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
     const searchInput = document.getElementById("searchInput");
     const resultsDiv = document.getElementById("results");
 
     let currentUser = null;
+    let followingList = [];
+    let requestedList = [];
 
-    onAuthStateChanged(auth, user => {
-      if (user) {
-        currentUser = user;
+    onAuthStateChanged(auth, async user => {
+      if (!user) return;
+      currentUser = user;
+
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const data = userDoc.data();
+        followingList = data.following || [];
+        requestedList = data.requested || [];
       }
     });
 
     async function searchUsers(keyword) {
       resultsDiv.innerHTML = "";
-
       const search = keyword.trim().toLowerCase();
-      if (!search) return;
-
-      const usersRef = collection(db, "users");
-      const snapshot = await getDocs(usersRef);
+      if (search === "") return;
 
       const seenUsernames = new Set();
+      const snapshot = await getDocs(collection(db, "users"));
 
-      for (const docSnap of snapshot.docs) {
-        const user = docSnap.data();
-        if (!user.username || seenUsernames.has(user.username)) continue;
+      snapshot.forEach(doc => {
+        const user = doc.data();
+        const uid = doc.id;
 
-        const matchUsername = user.username.toLowerCase().includes(search);
-        const matchDisplay = user.displayName?.toLowerCase().includes(search);
-        if (!matchUsername && !matchDisplay) continue;
+        if (currentUser && uid === currentUser.uid) return;
 
-        seenUsernames.add(user.username);
+        const username = user.username?.toLowerCase() || "";
+        const displayName = user.displayName?.toLowerCase() || "";
 
-        const userCard = document.createElement("div");
-        userCard.className = "user-card";
+        if (!(username.includes(search) || displayName.includes(search))) return;
+        if (seenUsernames.has(username)) return;
+        seenUsernames.add(username);
+
+        const isFollowing = followingList.includes(uid);
+        const isRequested = requestedList.includes(uid);
+        const isPrivate = user.isPrivate;
+
+        let statusText = "";
+        if (isFollowing) {
+          statusText = "Following";
+        } else if (isRequested) {
+          statusText = "Requested";
+        } else if (isPrivate) {
+          statusText = "Request";
+        } else {
+          statusText = "Follow";
+        }
+
+        const card = document.createElement("div");
+        card.className = "user-card";
+        card.onclick = () => {
+          window.location.href = `profile.html?user=${user.username}`;
+        };
 
         const verifiedBadge = user.isVerified
           ? `<img class="verified-badge" src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" alt="Verified">`
           : "";
 
-        const infoWrapper = document.createElement("div");
-        infoWrapper.className = "user-info-wrapper";
-        infoWrapper.onclick = () => window.location.href = `profile.html?user=${user.username}`;
-
-        infoWrapper.innerHTML = `
-          <img class="profile" src="${user.photoURL || 'https://via.placeholder.com/52'}" alt="Profile">
-          <div class="user-info">
-            <div class="username">${user.username} ${verifiedBadge}</div>
-            <div class="display-name">${user.displayName || ''}</div>
+        card.innerHTML = `
+          <div class="left">
+            <img class="profile" src="${user.photoURL || 'https://via.placeholder.com/52'}" alt="Profile">
+            <div class="user-info">
+              <div class="username">
+                ${user.username || 'Unknown'} ${verifiedBadge}
+              </div>
+              <div class="display-name">${user.displayName || ''}</div>
+            </div>
           </div>
+          <div class="status">${statusText}</div>
         `;
-
-        const button = document.createElement("button");
-        button.className = "action-button";
-
-        const targetDoc = doc(db, "users", user.uid);
-        const currentDoc = doc(db, "users", currentUser.uid);
-
-        const currentData = (await getDoc(currentDoc)).data();
-        const isFollowing = currentData.following?.includes(user.uid);
-        const sentRequests = currentData.sentRequests || [];
-
-        if (user.private) {
-          if (sentRequests.includes(user.uid)) {
-            button.textContent = "Request Sent";
-            button.classList.add("request-sent-btn");
-          } else {
-            button.textContent = "Send Request";
-            button.classList.add("follow-btn");
-            button.onclick = async (e) => {
-              e.stopPropagation();
-              await updateDoc(currentDoc, {
-                sentRequests: arrayUnion(user.uid)
-              });
-              await updateDoc(targetDoc, {
-                requests: arrayUnion(currentUser.uid)
-              });
-              button.textContent = "Request Sent";
-              button.className = "action-button request-sent-btn";
-            };
-          }
-        } else {
-          if (isFollowing) {
-            button.textContent = "Unfollow";
-            button.classList.add("unfollow-btn");
-            button.onclick = async (e) => {
-              e.stopPropagation();
-              await updateDoc(currentDoc, {
-                following: arrayRemove(user.uid)
-              });
-              await updateDoc(targetDoc, {
-                followers: arrayRemove(currentUser.uid)
-              });
-              button.textContent = "Follow";
-              button.className = "action-button follow-btn";
-            };
-          } else {
-            button.textContent = "Follow";
-            button.classList.add("follow-btn");
-            button.onclick = async (e) => {
-              e.stopPropagation();
-              await updateDoc(currentDoc, {
-                following: arrayUnion(user.uid)
-              });
-              await updateDoc(targetDoc, {
-                followers: arrayUnion(currentUser.uid)
-              });
-              button.textContent = "Unfollow";
-              button.className = "action-button unfollow-btn";
-            };
-          }
-        }
-
-        userCard.appendChild(infoWrapper);
-        userCard.appendChild(button);
-        resultsDiv.appendChild(userCard);
-      }
+        resultsDiv.appendChild(card);
+      });
     }
 
     searchInput.addEventListener("input", () => {
