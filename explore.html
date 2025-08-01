@@ -12,6 +12,7 @@
       --text: #fff;
       --subtext: #aaa;
       --border: #2a2a2a;
+      --accent: #1da1f2;
     }
     * {
       margin: 0;
@@ -49,26 +50,24 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 10px 12px;
-      margin-bottom: 12px;
+      padding: 12px;
+      margin-bottom: 10px;
       background-color: var(--card-bg);
-      border-radius: 12px;
       border: 1px solid var(--border);
+      border-radius: 12px;
     }
-    .user-left {
+    .user-info-wrapper {
       display: flex;
       align-items: center;
+      gap: 12px;
+      overflow: hidden;
       cursor: pointer;
     }
-    .user-card:hover {
-      background-color: #1e1e1e;
-    }
     .user-card img.profile {
-      width: 52px;
-      height: 52px;
+      width: 48px;
+      height: 48px;
       border-radius: 50%;
       object-fit: cover;
-      margin-right: 14px;
     }
     .user-info {
       display: flex;
@@ -96,24 +95,29 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .follow-btn {
-      padding: 6px 12px;
+    .action-button {
+      padding: 6px 16px;
+      font-size: 14px;
       border: none;
-      border-radius: 6px;
-      background-color: #3897f0;
-      color: white;
+      border-radius: 20px;
       cursor: pointer;
-      font-weight: 600;
+      transition: 0.2s;
+      white-space: nowrap;
     }
-    .follow-btn:disabled {
-      background-color: gray;
-      cursor: default;
+    .follow-btn {
+      background-color: var(--accent);
+      color: white;
+    }
+    .unfollow-btn, .request-sent-btn {
+      background-color: transparent;
+      color: var(--text);
+      border: 1px solid var(--border);
     }
   </style>
 </head>
 <body>
   <div class="search-container">
-    <input type="text" id="searchInput" placeholder="Search users..." autocomplete="off"/>
+    <input type="text" id="searchInput" placeholder="Search users..." autocomplete="off" />
   </div>
   <div id="results"></div>
 
@@ -124,123 +128,133 @@
       getDocs,
       doc,
       getDoc,
-      setDoc,
-      deleteDoc
+      updateDoc,
+      arrayUnion,
+      arrayRemove
     } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
     const searchInput = document.getElementById("searchInput");
     const resultsDiv = document.getElementById("results");
-    let currentUserId = null;
+
+    let currentUser = null;
 
     onAuthStateChanged(auth, user => {
-      if (user) currentUserId = user.uid;
+      if (user) {
+        currentUser = user;
+      }
     });
 
     async function searchUsers(keyword) {
       resultsDiv.innerHTML = "";
+
       const search = keyword.trim().toLowerCase();
       if (!search) return;
 
-      const snapshot = await getDocs(collection(db, "users"));
-      const seen = new Set();
+      const usersRef = collection(db, "users");
+      const snapshot = await getDocs(usersRef);
+
+      const seenUsernames = new Set();
 
       for (const docSnap of snapshot.docs) {
         const user = docSnap.data();
-        const uid = docSnap.id;
-        if (uid === currentUserId) continue;
+        if (!user.username || seenUsernames.has(user.username)) continue;
 
-        const matchUsername = user.username?.toLowerCase().includes(search);
+        const matchUsername = user.username.toLowerCase().includes(search);
         const matchDisplay = user.displayName?.toLowerCase().includes(search);
-        if (!(matchUsername || matchDisplay)) continue;
-        if (seen.has(user.username)) continue;
-        seen.add(user.username);
+        if (!matchUsername && !matchDisplay) continue;
 
-        const card = document.createElement("div");
-        card.className = "user-card";
+        seenUsernames.add(user.username);
 
-        const left = document.createElement("div");
-        left.className = "user-left";
-        left.onclick = () => window.location.href = `profile.html?user=${user.username}`;
+        const userCard = document.createElement("div");
+        userCard.className = "user-card";
 
-        const profileImg = document.createElement("img");
-        profileImg.className = "profile";
-        profileImg.src = user.photoURL || 'https://via.placeholder.com/52';
+        const verifiedBadge = user.isVerified
+          ? `<img class="verified-badge" src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" alt="Verified">`
+          : "";
 
-        const userInfo = document.createElement("div");
-        userInfo.className = "user-info";
+        const infoWrapper = document.createElement("div");
+        infoWrapper.className = "user-info-wrapper";
+        infoWrapper.onclick = () => window.location.href = `profile.html?user=${user.username}`;
 
-        const uname = document.createElement("div");
-        uname.className = "username";
-        uname.textContent = user.username || 'Unknown';
+        infoWrapper.innerHTML = `
+          <img class="profile" src="${user.photoURL || 'https://via.placeholder.com/52'}" alt="Profile">
+          <div class="user-info">
+            <div class="username">${user.username} ${verifiedBadge}</div>
+            <div class="display-name">${user.displayName || ''}</div>
+          </div>
+        `;
 
-        if (user.isVerified) {
-          const badge = document.createElement("img");
-          badge.className = "verified-badge";
-          badge.src = "https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg";
-          uname.appendChild(badge);
-        }
+        const button = document.createElement("button");
+        button.className = "action-button";
 
-        const dname = document.createElement("div");
-        dname.className = "display-name";
-        dname.textContent = user.displayName || "";
+        const targetDoc = doc(db, "users", user.uid);
+        const currentDoc = doc(db, "users", currentUser.uid);
 
-        userInfo.appendChild(uname);
-        userInfo.appendChild(dname);
-        left.appendChild(profileImg);
-        left.appendChild(userInfo);
-        card.appendChild(left);
+        const currentData = (await getDoc(currentDoc)).data();
+        const isFollowing = currentData.following?.includes(user.uid);
+        const sentRequests = currentData.sentRequests || [];
 
-        const btn = document.createElement("button");
-        btn.className = "follow-btn";
-        btn.textContent = "Loading...";
-        btn.disabled = true;
-        card.appendChild(btn);
-
-        resultsDiv.appendChild(card);
-
-        if (!currentUserId) return;
-
-        const followerDoc = doc(db, "users", uid, "followers", currentUserId);
-        const requestDoc = doc(db, "users", uid, "followRequests", currentUserId);
-
-        const [isFollowingSnap, isRequestedSnap] = await Promise.all([
-          getDoc(followerDoc),
-          getDoc(requestDoc)
-        ]);
-
-        const isPrivate = user.isPrivate;
-
-        if (isFollowingSnap.exists()) {
-          btn.textContent = "Unfollow";
-          btn.disabled = false;
-          btn.onclick = async () => {
-            await deleteDoc(followerDoc);
-            btn.textContent = "Follow";
-          };
-        } else if (isRequestedSnap.exists()) {
-          btn.textContent = "Request Sent";
-          btn.disabled = true;
-        } else if (isPrivate) {
-          btn.textContent = "Send Request";
-          btn.disabled = false;
-          btn.onclick = async () => {
-            await setDoc(requestDoc, { from: currentUserId, timestamp: Date.now() });
-            btn.textContent = "Request Sent";
-            btn.disabled = true;
-          };
+        if (user.private) {
+          if (sentRequests.includes(user.uid)) {
+            button.textContent = "Request Sent";
+            button.classList.add("request-sent-btn");
+          } else {
+            button.textContent = "Send Request";
+            button.classList.add("follow-btn");
+            button.onclick = async (e) => {
+              e.stopPropagation();
+              await updateDoc(currentDoc, {
+                sentRequests: arrayUnion(user.uid)
+              });
+              await updateDoc(targetDoc, {
+                requests: arrayUnion(currentUser.uid)
+              });
+              button.textContent = "Request Sent";
+              button.className = "action-button request-sent-btn";
+            };
+          }
         } else {
-          btn.textContent = "Follow";
-          btn.disabled = false;
-          btn.onclick = async () => {
-            await setDoc(followerDoc, { from: currentUserId, timestamp: Date.now() });
-            btn.textContent = "Unfollow";
-          };
+          if (isFollowing) {
+            button.textContent = "Unfollow";
+            button.classList.add("unfollow-btn");
+            button.onclick = async (e) => {
+              e.stopPropagation();
+              await updateDoc(currentDoc, {
+                following: arrayRemove(user.uid)
+              });
+              await updateDoc(targetDoc, {
+                followers: arrayRemove(currentUser.uid)
+              });
+              button.textContent = "Follow";
+              button.className = "action-button follow-btn";
+            };
+          } else {
+            button.textContent = "Follow";
+            button.classList.add("follow-btn");
+            button.onclick = async (e) => {
+              e.stopPropagation();
+              await updateDoc(currentDoc, {
+                following: arrayUnion(user.uid)
+              });
+              await updateDoc(targetDoc, {
+                followers: arrayUnion(currentUser.uid)
+              });
+              button.textContent = "Unfollow";
+              button.className = "action-button unfollow-btn";
+            };
+          }
         }
+
+        userCard.appendChild(infoWrapper);
+        userCard.appendChild(button);
+        resultsDiv.appendChild(userCard);
       }
     }
 
-    searchInput.addEventListener("input", () => searchUsers(searchInput.value));
+    searchInput.addEventListener("input", () => {
+      searchUsers(searchInput.value);
+    });
   </script>
 </body>
 </html>
