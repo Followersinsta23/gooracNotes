@@ -36,9 +36,8 @@
       gap: 5px;
     }
     .verified-badge {
-      width: 14px;
-      height: 14px;
-      vertical-align: middle;
+      width: 16px;
+      height: 16px;
     }
     #display-name {
       color: #ccc;
@@ -101,8 +100,7 @@
   <script type="module">
     import { auth, db } from './config.js';
     import {
-      collection, doc, getDoc, getDocs, query, where,
-      updateDoc, arrayUnion, arrayRemove, setDoc
+      collection, doc, getDoc, getDocs, updateDoc, arrayUnion, arrayRemove, query, where, setDoc
     } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
     import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
@@ -133,71 +131,76 @@
       const targetId = targetDoc.id;
 
       if (user.uid === targetId) {
-        document.getElementById("follow-btn").style.display = "none";
+        window.location.href = "myprofile.html";
+        return;
       }
 
       const currentUserRef = doc(db, "users", user.uid);
       const currentUserSnap = await getDoc(currentUserRef);
       const currentUserData = currentUserSnap.data();
 
+      const isPrivate = targetData.isPrivate;
+      const followBtn = document.getElementById("follow-btn");
+
+      const notifRef = doc(db, "notifications", targetId);
+      const notifSnap = await getDoc(notifRef);
+      const requests = notifSnap.exists() ? notifSnap.data().requests || [] : [];
+      const alreadyRequested = requests.includes(user.uid);
       const isFollowing = targetData.followers?.includes(user.uid);
-      const isPrivate = targetData.isPrivate === true;
-      const button = document.getElementById("follow-btn");
 
-      // Show follow/request/unfollow based on state
-      if (user.uid !== targetId) {
-        button.style.display = "inline-block";
-
-        if (isPrivate && !isFollowing) {
-          button.textContent = "Send Follow Request";
-          button.onclick = async () => {
-            const notifRef = doc(db, "notifications", targetId);
-            const notifSnap = await getDoc(notifRef);
-            if (!notifSnap.exists()) {
-              await setDoc(notifRef, { requests: [user.uid] });
-            } else {
-              await updateDoc(notifRef, {
-                requests: arrayUnion(user.uid)
-              });
-            }
-            button.disabled = true;
-            button.textContent = "Request Sent";
-          };
+      const handleFollow = async () => {
+        if (isPrivate) {
+          await setDoc(notifRef, { requests: arrayUnion(user.uid) }, { merge: true });
+          followBtn.disabled = true;
+          followBtn.textContent = "Request Sent";
         } else {
-          button.textContent = isFollowing ? "Unfollow" : "Follow";
-          button.onclick = async () => {
-            const targetUserRef = doc(db, "users", targetId);
-            if (isFollowing) {
-              await updateDoc(currentUserRef, {
-                following: arrayRemove(targetId)
-              });
-              await updateDoc(targetUserRef, {
-                followers: arrayRemove(user.uid)
-              });
-              button.textContent = "Follow";
-            } else {
-              await updateDoc(currentUserRef, {
-                following: arrayUnion(targetId)
-              });
-              await updateDoc(targetUserRef, {
-                followers: arrayUnion(user.uid)
-              });
-              button.textContent = "Unfollow";
-            }
-          };
+          await updateDoc(doc(db, "users", targetId), {
+            followers: arrayUnion(user.uid)
+          });
+          await updateDoc(currentUserRef, {
+            following: arrayUnion(targetId)
+          });
+          followBtn.textContent = "Unfollow";
+          followBtn.onclick = handleUnfollow;
         }
+      };
+
+      const handleUnfollow = async () => {
+        await updateDoc(doc(db, "users", targetId), {
+          followers: arrayRemove(user.uid)
+        });
+        await updateDoc(currentUserRef, {
+          following: arrayRemove(targetId)
+        });
+        followBtn.textContent = isPrivate ? "Send Follow Request" : "Follow";
+        followBtn.disabled = false;
+        followBtn.onclick = handleFollow;
+      };
+
+      followBtn.style.display = "inline-block";
+
+      if (isFollowing) {
+        followBtn.textContent = "Unfollow";
+        followBtn.onclick = handleUnfollow;
+      } else if (alreadyRequested) {
+        followBtn.textContent = "Request Sent";
+        followBtn.disabled = true;
+      } else {
+        followBtn.textContent = isPrivate ? "Send Follow Request" : "Follow";
+        followBtn.disabled = false;
+        followBtn.onclick = handleFollow;
       }
 
       document.getElementById("profile-pic").src = targetData.photoURL || "https://upload.wikimedia.org/wikipedia/commons/8/89/Portrait_Placeholder.png";
       document.getElementById("username").innerHTML =
         `@${targetData.username}` +
         (targetData.isVerified
-          ? ' <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e4/Twitter_Verified_Badge.svg/32px-Twitter_Verified_Badge.svg.png" class="verified-badge" alt="Verified">'
+          ? ' <img src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" class="verified-badge" alt="Verified">'
           : '');
       document.getElementById("display-name").textContent = targetData.displayName || "";
       document.getElementById("bio").textContent = targetData.bio || "";
-      document.getElementById("followers").textContent = (targetData.followers?.length || 0);
-      document.getElementById("following").textContent = (targetData.following?.length || 0);
+      document.getElementById("followers").textContent = targetData.followers?.length || 0;
+      document.getElementById("following").textContent = targetData.following?.length || 0;
 
       if (targetData.createdAt?.seconds) {
         const joinedDate = new Date(targetData.createdAt.seconds * 1000);
