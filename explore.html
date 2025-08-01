@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Explore</title>
   <style>
     :root {
@@ -12,8 +12,6 @@
       --text: #fff;
       --subtext: #aaa;
       --border: #2a2a2a;
-      --btn-bg: #333;
-      --btn-text: #eee;
     }
     * {
       margin: 0;
@@ -45,22 +43,25 @@
       color: var(--subtext);
     }
     #results {
-      padding: 12px 12px 100px;
+      padding: 10px 12px 100px;
     }
     .user-card {
       display: flex;
-      justify-content: space-between;
       align-items: center;
-      padding: 10px 14px;
+      justify-content: space-between;
+      padding: 10px 12px;
       margin-bottom: 12px;
       background-color: var(--card-bg);
       border-radius: 12px;
       border: 1px solid var(--border);
     }
-    .card-left {
+    .user-left {
       display: flex;
       align-items: center;
       cursor: pointer;
+    }
+    .user-card:hover {
+      background-color: #1e1e1e;
     }
     .user-card img.profile {
       width: 52px;
@@ -97,18 +98,22 @@
     }
     .follow-btn {
       padding: 6px 12px;
-      background-color: var(--btn-bg);
-      color: var(--btn-text);
       border: none;
-      border-radius: 8px;
-      font-size: 14px;
+      border-radius: 6px;
+      background-color: #3897f0;
+      color: white;
       cursor: pointer;
+      font-weight: 600;
+    }
+    .follow-btn:disabled {
+      background-color: gray;
+      cursor: default;
     }
   </style>
 </head>
 <body>
   <div class="search-container">
-    <input type="text" id="searchInput" placeholder="Search users..." autocomplete="off" />
+    <input type="text" id="searchInput" placeholder="Search users..." autocomplete="off"/>
   </div>
   <div id="results"></div>
 
@@ -118,42 +123,24 @@
       collection,
       getDocs,
       doc,
-      getDoc
+      getDoc,
+      setDoc,
+      deleteDoc
     } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
-    import {
-      getAuth,
-      onAuthStateChanged
-    } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
+    import { onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 
     const searchInput = document.getElementById("searchInput");
     const resultsDiv = document.getElementById("results");
+    let currentUserId = null;
 
-    let currentUserUID = null;
-
-    onAuthStateChanged(auth, async (user) => {
-      if (!user) {
-        window.location.href = "login.html";
-      } else {
-        currentUserUID = user.uid;
-        searchInput.addEventListener("input", () => {
-          searchUsers(searchInput.value);
-        });
-      }
+    onAuthStateChanged(auth, user => {
+      if (user) currentUserId = user.uid;
     });
-
-    async function getFollowStatus(targetUID) {
-      if (!currentUserUID || currentUserUID === targetUID) return null;
-      const followDoc = await getDoc(doc(db, "users", currentUserUID, "following", targetUID));
-      if (followDoc.exists()) {
-        return followDoc.data().status || "Following";
-      }
-      return "Follow";
-    }
 
     async function searchUsers(keyword) {
       resultsDiv.innerHTML = "";
       const search = keyword.trim().toLowerCase();
-      if (search === "") return;
+      if (!search) return;
 
       const snapshot = await getDocs(collection(db, "users"));
       const seen = new Set();
@@ -161,51 +148,99 @@
       for (const docSnap of snapshot.docs) {
         const user = docSnap.data();
         const uid = docSnap.id;
+        if (uid === currentUserId) continue;
 
         const matchUsername = user.username?.toLowerCase().includes(search);
         const matchDisplay = user.displayName?.toLowerCase().includes(search);
-
         if (!(matchUsername || matchDisplay)) continue;
-        if (seen.has(uid)) continue;
-        seen.add(uid);
+        if (seen.has(user.username)) continue;
+        seen.add(user.username);
 
         const card = document.createElement("div");
         card.className = "user-card";
 
-        const verifiedBadge = user.isVerified
-          ? `<img class="verified-badge" src="https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg" alt="Verified">`
-          : "";
+        const left = document.createElement("div");
+        left.className = "user-left";
+        left.onclick = () => window.location.href = `profile.html?user=${user.username}`;
 
-        const followStatus = await getFollowStatus(uid);
+        const profileImg = document.createElement("img");
+        profileImg.className = "profile";
+        profileImg.src = user.photoURL || 'https://via.placeholder.com/52';
 
-        const cardLeft = document.createElement("div");
-        cardLeft.className = "card-left";
-        cardLeft.onclick = () => {
-          window.location.href = `profile.html?user=${user.username}`;
-        };
+        const userInfo = document.createElement("div");
+        userInfo.className = "user-info";
 
-        cardLeft.innerHTML = `
-          <img class="profile" src="${user.photoURL || 'https://via.placeholder.com/52'}" alt="Profile">
-          <div class="user-info">
-            <div class="username">
-              ${user.username || 'Unknown'} ${verifiedBadge}
-            </div>
-            <div class="display-name">${user.displayName || ''}</div>
-          </div>
-        `;
+        const uname = document.createElement("div");
+        uname.className = "username";
+        uname.textContent = user.username || 'Unknown';
 
-        card.appendChild(cardLeft);
-
-        if (followStatus) {
-          const btn = document.createElement("button");
-          btn.className = "follow-btn";
-          btn.textContent = followStatus;
-          card.appendChild(btn);
+        if (user.isVerified) {
+          const badge = document.createElement("img");
+          badge.className = "verified-badge";
+          badge.src = "https://upload.wikimedia.org/wikipedia/commons/e/e4/Twitter_Verified_Badge.svg";
+          uname.appendChild(badge);
         }
 
+        const dname = document.createElement("div");
+        dname.className = "display-name";
+        dname.textContent = user.displayName || "";
+
+        userInfo.appendChild(uname);
+        userInfo.appendChild(dname);
+        left.appendChild(profileImg);
+        left.appendChild(userInfo);
+        card.appendChild(left);
+
+        const btn = document.createElement("button");
+        btn.className = "follow-btn";
+        btn.textContent = "Loading...";
+        btn.disabled = true;
+        card.appendChild(btn);
+
         resultsDiv.appendChild(card);
+
+        if (!currentUserId) return;
+
+        const followerDoc = doc(db, "users", uid, "followers", currentUserId);
+        const requestDoc = doc(db, "users", uid, "followRequests", currentUserId);
+
+        const [isFollowingSnap, isRequestedSnap] = await Promise.all([
+          getDoc(followerDoc),
+          getDoc(requestDoc)
+        ]);
+
+        const isPrivate = user.isPrivate;
+
+        if (isFollowingSnap.exists()) {
+          btn.textContent = "Unfollow";
+          btn.disabled = false;
+          btn.onclick = async () => {
+            await deleteDoc(followerDoc);
+            btn.textContent = "Follow";
+          };
+        } else if (isRequestedSnap.exists()) {
+          btn.textContent = "Request Sent";
+          btn.disabled = true;
+        } else if (isPrivate) {
+          btn.textContent = "Send Request";
+          btn.disabled = false;
+          btn.onclick = async () => {
+            await setDoc(requestDoc, { from: currentUserId, timestamp: Date.now() });
+            btn.textContent = "Request Sent";
+            btn.disabled = true;
+          };
+        } else {
+          btn.textContent = "Follow";
+          btn.disabled = false;
+          btn.onclick = async () => {
+            await setDoc(followerDoc, { from: currentUserId, timestamp: Date.now() });
+            btn.textContent = "Unfollow";
+          };
+        }
       }
     }
+
+    searchInput.addEventListener("input", () => searchUsers(searchInput.value));
   </script>
 </body>
 </html>
